@@ -1,0 +1,18 @@
+settings/
+# PyCharm
+.idea/
+
+# Python virtualenv environment folders
+env/
+env3/
+.env/
+
+# Python
+__pycache__/
+*.egg-info/
+build/
+dist/
+
+# Log files
+*.log
+

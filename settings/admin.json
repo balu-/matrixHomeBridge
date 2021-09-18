@@ -1,0 +1,7 @@
+{
+	"user_id": "@matrixBridgeAdmin:matrix.org" ,
+	"device_ids": [
+    		"XXXXXXXXXX"
+	] ,
+	"room_id": "!XXXXXXXXXX:matrix.org"
+}

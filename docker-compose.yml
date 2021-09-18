@@ -1,0 +1,13 @@
+---
+version: "2.1"
+services:
+  nzbget:
+    image: matrixBridge:latest
+    container_name: matrixBridge
+    environment:
+      - TZ=Europe/Berlin
+    volumes:
+      - ./settings:/app/settings
+    ports:
+      - 8080:8080
+    restart: unless-stopped

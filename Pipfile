@@ -1,0 +1,14 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+matrix-nio = {version = "~=0.18.0", extras = ["e2e"]}
+
+[dev-packages]
+flake8 = "*"
+yapf = "*"
+
+[requires]
+python_version = "3"
