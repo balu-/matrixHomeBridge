@@ -12,8 +12,8 @@ Simple container that lets you send matrix messages via http post request
   Should contain the account info the bridge is using<br />
   a `userid` filed that names the account the bridge uses<br />
   and a `homeserver` filed that names the matrix server to use <br />
-- for the first run only pw.json is need <br />
-  Which contains only one filed `pw` that contains the password of the account named in `matrixaccount.json`
+- for the first run only pw.txt is need <br />
+  Which contains only one line that contains the password of the account named in `matrixaccount.json`
 - on first loggin credentials.json is created so that the pw.json file is no longer need
 
 ## Send a message

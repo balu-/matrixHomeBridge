@@ -8,9 +8,19 @@ from httpApi import httpApi
 from typing import Optional
 
 from nio import (AsyncClient, ClientConfig, DevicesError, Event, InviteEvent, LoginResponse, LocalProtocolError,
-                 MatrixRoom, MatrixUser, RoomMessageText, crypto, exceptions, RoomSendResponse)
+                 MatrixRoom, MatrixUser, RoomMessageText, crypto, exceptions, RoomSendResponse, PresenceSetError, PresenceSetResponse)
 
-print("RUN")
+# This is a fully-documented example of how to do manual verification with nio,
+# for when you already know the device IDs of the users you want to trust. If
+# you want live verification using emojis, the process is more complicated and
+# will be covered in another example.
+
+# We're building on the restore_login example here to preserve device IDs and
+# therefore preserve trust; if @bob trusts @alice's device ID ABC and @alice
+# restarts this program, loading the same keys, @bob will preserve trust. If
+# @alice logged in again @alice would have new keys and a device ID XYZ, and
+# @bob wouldn't trust it.
+
 # The store is where we want to place encryption details like our keys, trusted
 # devices and blacklisted devices. Here we place it in the working directory,
 # but if you deploy your program you might consider /var or /opt for storage
@@ -21,6 +31,11 @@ STORE_FOLDER = "settings/nio_store/"
 # would have to re-verify. See the restoring login example for more into.
 SESSION_DETAILS_FILE = "settings/credentials.json"
 
+# Only needed for this example, this is who @alice will securely
+# communicate with. We need all the device IDs of this user so we can consider
+# them "trusted". If an unknown device shows up (like @bob signs into their
+# account on another device), this program will refuse to send a message in the
+# room. Try it!
 #file that contains Admin userid, Admin deviceids and Admin controll channel
 ADMIN_FILE = "settings/admin.json"
 
@@ -29,7 +44,7 @@ ACCOUNT_FILE = "settings/matrixaccount.json"
 # Json file that is only used on first login if SESSION_DETAILS_FILE is not there,
 # should only contain a pw key with the account pw as value.
 # The file should be removed after first login, as its no longer needed
-ONE_TIMEPASSWORD_FILE = "settings/pw.json"
+ONE_TIMEPASSWORD_FILE = "settings/pw.txt"
 
 
 class CustomEncryptedClient(AsyncClient):
@@ -105,11 +120,11 @@ class CustomEncryptedClient(AsyncClient):
         if not self.access_token or not self.device_id:
             print("Using passwort for login")
             with open(ONE_TIMEPASSWORD_FILE, "r") as f:
-                pw = json.load(f)
-                if not 'pw' in pw:
+                pw = f.readline().replace('\r', '').replace('\n', '')
+                if len(pw) == 0:
                     print(f"Could not read 'pw' from {ONE_TIMEPASSWORD_FILE}: {pw}")
                     sys.exit(1)
-                resp = await super().login(pw['pw'])
+                resp = await super().login(pw)
                 if isinstance(resp, LoginResponse):
                     print("Logged in using a password; saving details to disk")
                     self.__write_details_to_disk(resp)
@@ -152,6 +167,14 @@ class CustomEncryptedClient(AsyncClient):
             self.verify_device(olm_device)
             print(f"Trusting {device_id} from user {user_id}")
 
+    def add_trusted_device(self, user_id:str, device_id:str ) -> None:
+        """ extend Trust to a certain device """
+        for olm_device_id, olm_device in self.device_store[user_id].items():
+            if device_id == olm_device_id:
+                self.verify_device(olm_device)
+                print(f"Trusting {device_id} from user {user_id}")
+
+
     def cb_autojoin_room(self, room: MatrixRoom, event: InviteEvent):
         """Callback to automatically joins a Matrix room on invite.
         Arguments:
@@ -187,11 +210,29 @@ class CustomEncryptedClient(AsyncClient):
         """
         if body == "exit":
             await self.send_logMsg("Shuting down")
+            await self.shutdown()
             print("Stopping event loop ...")
             # Find all running tasks:
             pending = asyncio.all_tasks()
             for task in pending:
                 task.cancel()
+            print("tasks canceld")
+        elif body.startswith("trust"):
+            print("TODO extend Trust")
+            dev_id = body.split(" ")
+            if len(dev_id) == 2 and len(dev_id[1]) == 10:
+                dev_id = dev_id[1]
+                print("Add Trust to "+str(dev_id))
+                self.add_trusted_device(self.admin_user_id, dev_id)
+                await send_logMsg("Add Trusted device "+str(dev_id))
+            #add_trusted_device
+        elif body == "ping":
+            await send_logMsg("pong")
+
+    async def shutdown(self):
+        print("shutdown")
+        await client.set_presence("offline")
+
 
     async def send_logMsg(self, msg):
         """Sends message to admin_room_id
@@ -207,11 +248,37 @@ class CustomEncryptedClient(AsyncClient):
                                  })
         except exceptions.OlmUnverifiedDeviceError as err:
             print("Encryption error")
+            print("These are all known devices:")
+            [print(f"\t{device.user_id}\t {device.device_id}\t {device.trust_state}\t  {device.display_name}") for device in self.device_store]
+            await self.send_unverified_error()
+            #sys.exit(1)
+
+    async def send_unverified_error(self):
+        try:
+            await self.room_send(room_id=self.admin_room_id,
+                                 message_type="m.room.message",
+                                 content={
+                                     "msgtype": "m.text",
+                                     "body": "Error, unverified Devices"
+                                 }, ignore_unverified_devices=True)
+        except exceptions.OlmUnverifiedDeviceError as err:
+            print("This should not happen")
 
     async def send_hello_world(self):
         """Sends message to admin_room_id to anounce beeing online
         """
+
         try:
+            print("set presence")
+            res = await self.set_presence("online")
+            if isinstance(res, PresenceSetError):
+                print("Could not set presence")
+            elif isinstance(res, PresenceSetResponse):
+                print("Success setting state")
+            else:
+                print("Unkown response state")
+                print(res)
+
             await self.room_send(room_id=self.admin_room_id,
                                  message_type="m.room.message",
                                  content={
@@ -220,9 +287,10 @@ class CustomEncryptedClient(AsyncClient):
                                  })
         except exceptions.OlmUnverifiedDeviceError as err:
             print("OlmUnverifiedDeviceError")
-            #device_store: crypto.DeviceStore = device_store
-            #[print(f"\t{device.user_id}\t {device.device_id}\t {device.trust_state}\t  {device.display_name}") for device in device_store]
-            sys.exit(1)
+            print("These are all known devices:")
+            [print(f"\t{device.user_id}\t {device.device_id}\t {device.trust_state}\t  {device.display_name}") for device in self.device_store]
+            #sys.exit(1)
+            await self.send_unverified_error()
 
     @staticmethod
     def __write_details_to_disk(resp: LoginResponse) -> None:
@@ -256,18 +324,17 @@ async def run_client(client: CustomEncryptedClient) -> None:
 
         if login_type == "pw":
             # In practice, you want to have a list of previously-known device IDs
-            # for each user you want ot trust. Here, we require that list as a
-            # global variable
+            # for each user you want ot trust. 
             client.trust_devices(client.admin_user_id, client.admin_device_ids)
 
             # In this case, we'll trust _all_ of @alice's devices. NOTE that this
             # is a SUPER BAD IDEA in practice, but for the purpose of this example
             # it'll be easier, since you may end up creating lots of sessions for
             # @alice as you play with the script
-            client.trust_devices(self.user_id)
+            client.trust_devices(client.user_id)
 
             await client.send_logMsg("Init trust (all on my account / configured ones on yours)")
-
+        
         await client.send_hello_world()
 
     # We're creating Tasks here so that you could potentially write other
@@ -301,6 +368,8 @@ async def main():
     # get user and homeserver from json file
     with open(ACCOUNT_FILE, "r") as f:
         matrixaccount = json.load(f)
+        print("Load Account")
+        print(matrixaccount)
         if not 'userid' in matrixaccount or not 'homeserver' in matrixaccount:
             print(f"Couldn't load 'userid' or 'homeserver' from {ACCOUNT_FILE} file. ")
             sys.exit(1)
@@ -320,6 +389,8 @@ async def main():
         try:
             await run_client(client)
         except (asyncio.CancelledError, KeyboardInterrupt):
+            pass;
+        finally:
             #shutdown the webserver
             web.stop()
             await client.close()
