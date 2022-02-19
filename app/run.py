@@ -175,7 +175,7 @@ class CustomEncryptedClient(AsyncClient):
                 print(f"Trusting {device_id} from user {user_id}")
 
 
-    def cb_autojoin_room(self, room: MatrixRoom, event: InviteEvent):
+    async def cb_autojoin_room(self, room: MatrixRoom, event: InviteEvent):
         """Callback to automatically joins a Matrix room on invite.
         Arguments:
             room {MatrixRoom} -- Provided by nio
@@ -184,7 +184,7 @@ class CustomEncryptedClient(AsyncClient):
         #self.join(room.room_id)
         #room = self.rooms[ROOM_ID]
         #print(f"Room {room.name} is encrypted: {room.encrypted}" )
-        send_logMsg(f"i've been invited to {room.name}")
+        await self.send_logMsg(f"i've been invited to {room.name}")
 
     async def cb_print_messages(self, room: MatrixRoom, event: RoomMessageText):
         """Callback to print all received messages to stdout.
@@ -224,10 +224,10 @@ class CustomEncryptedClient(AsyncClient):
                 dev_id = dev_id[1]
                 print("Add Trust to "+str(dev_id))
                 self.add_trusted_device(self.admin_user_id, dev_id)
-                await send_logMsg("Add Trusted device "+str(dev_id))
+                await self.send_logMsg("Add Trusted device "+str(dev_id))
             #add_trusted_device
         elif body == "ping":
-            await send_logMsg("pong")
+            await self.send_logMsg("pong")
 
     async def shutdown(self):
         print("shutdown")
